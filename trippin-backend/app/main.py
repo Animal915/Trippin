@@ -1,8 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Dict, Optional
 import random
+import httpx
+import asyncio
 
 app = FastAPI()
 
@@ -33,132 +35,108 @@ class ItineraryResponse(BaseModel):
     total_cost: float
     places: Dict[str, List[Place]]
 
-MOCK_PLACES = {
-    "paris": {
-        "historical": [
-            {"name": "Louvre Museum", "description": "World's largest art museum", "price": 17.0},
-            {"name": "Musée d'Orsay", "description": "Impressionist masterpieces", "price": 16.0},
-            {"name": "Palace of Versailles", "description": "Opulent royal palace", "price": 20.0},
-            {"name": "Arc de Triomphe", "description": "Iconic triumphal arch", "price": 13.0},
-            {"name": "Sainte-Chapelle", "description": "Gothic chapel with stunning stained glass", "price": 11.5},
-        ],
-        "food": [
-            {"name": "Le Comptoir du Relais", "description": "Traditional French bistro", "price": 45.0},
-            {"name": "L'As du Fallafel", "description": "Famous falafel in the Marais", "price": 8.0},
-            {"name": "Pierre Hermé", "description": "Luxury macarons and pastries", "price": 15.0},
-            {"name": "Breizh Café", "description": "Modern crêperie", "price": 25.0},
-            {"name": "Du Pain et des Idées", "description": "Artisanal bakery", "price": 12.0},
-        ],
-        "scenic": [
-            {"name": "Eiffel Tower", "description": "Iconic iron lattice tower", "price": 29.4},
-            {"name": "Seine River Cruise", "description": "Scenic boat tour", "price": 15.0},
-            {"name": "Montmartre & Sacré-Cœur", "description": "Historic hilltop district", "price": 0.0},
-            {"name": "Luxembourg Gardens", "description": "Beautiful palace gardens", "price": 0.0},
-            {"name": "Trocadéro Gardens", "description": "Best Eiffel Tower views", "price": 0.0},
-        ],
-        "nightlife": [
-            {"name": "Moulin Rouge", "description": "Famous cabaret show", "price": 87.0},
-            {"name": "Buddha-Bar", "description": "Upscale cocktail lounge", "price": 35.0},
-            {"name": "Le Marais Bars", "description": "Trendy bar district", "price": 25.0},
-            {"name": "Lido de Paris", "description": "Glamorous cabaret", "price": 75.0},
-            {"name": "Hemingway Bar", "description": "Classic cocktail bar at The Ritz", "price": 40.0},
-        ]
-    },
-    "tokyo": {
-        "historical": [
-            {"name": "Tokyo National Museum", "description": "Japan's oldest and largest museum", "price": 12.0},
-            {"name": "Senso-ji Temple", "description": "Ancient Buddhist temple", "price": 0.0},
-            {"name": "Imperial Palace", "description": "Emperor's primary residence", "price": 0.0},
-            {"name": "Meiji Shrine", "description": "Shinto shrine in forest setting", "price": 0.0},
-            {"name": "Tokyo National Museum of Modern Art", "description": "Premier modern art collection", "price": 5.0},
-        ],
-        "food": [
-            {"name": "Tsukiji Outer Market", "description": "Fresh sushi and street food", "price": 20.0},
-            {"name": "Ramen Yokocho", "description": "Famous ramen alley", "price": 12.0},
-            {"name": "Sukiyabashi Jiro", "description": "World-renowned sushi restaurant", "price": 300.0},
-            {"name": "Izakaya Torikizoku", "description": "Popular yakitori chain", "price": 15.0},
-            {"name": "Gonpachi", "description": "Traditional Japanese dining", "price": 45.0},
-        ],
-        "scenic": [
-            {"name": "Tokyo Skytree", "description": "Tallest structure in Japan", "price": 25.0},
-            {"name": "Shibuya Crossing", "description": "World's busiest pedestrian crossing", "price": 0.0},
-            {"name": "Cherry Blossom Viewing", "description": "Seasonal sakura experience", "price": 0.0},
-            {"name": "Tokyo Bay Cruise", "description": "Scenic harbor tour", "price": 18.0},
-            {"name": "Roppongi Hills Observatory", "description": "City skyline views", "price": 20.0},
-        ],
-        "nightlife": [
-            {"name": "Golden Gai", "description": "Tiny bars in Shinjuku", "price": 30.0},
-            {"name": "Robot Restaurant", "description": "Quirky robot show", "price": 65.0},
-            {"name": "Karaoke Box", "description": "Private karaoke rooms", "price": 25.0},
-            {"name": "Roppongi Clubs", "description": "International nightlife district", "price": 40.0},
-            {"name": "Sake Tasting Bar", "description": "Traditional sake experience", "price": 35.0},
-        ]
-    },
-    "new york": {
-        "historical": [
-            {"name": "Metropolitan Museum of Art", "description": "World-class art collection", "price": 30.0},
-            {"name": "9/11 Memorial & Museum", "description": "Moving tribute to victims", "price": 26.0},
-            {"name": "Statue of Liberty", "description": "Symbol of freedom", "price": 23.5},
-            {"name": "Ellis Island", "description": "Immigration history museum", "price": 23.5},
-            {"name": "Museum of Natural History", "description": "Dinosaurs and planetarium", "price": 28.0},
-        ],
-        "food": [
-            {"name": "Katz's Delicatessen", "description": "Famous pastrami sandwiches", "price": 25.0},
-            {"name": "Joe's Pizza", "description": "Classic New York slice", "price": 8.0},
-            {"name": "Peter Luger Steak House", "description": "Legendary steakhouse", "price": 120.0},
-            {"name": "Russ & Daughters", "description": "Appetizing shop since 1914", "price": 35.0},
-            {"name": "Xi'an Famous Foods", "description": "Hand-pulled noodles", "price": 15.0},
-        ],
-        "scenic": [
-            {"name": "Central Park", "description": "Urban oasis in Manhattan", "price": 0.0},
-            {"name": "Brooklyn Bridge", "description": "Iconic suspension bridge", "price": 0.0},
-            {"name": "High Line", "description": "Elevated park on old railway", "price": 0.0},
-            {"name": "Top of the Rock", "description": "Empire State Building views", "price": 39.0},
-            {"name": "Staten Island Ferry", "description": "Free harbor views", "price": 0.0},
-        ],
-        "nightlife": [
-            {"name": "Broadway Show", "description": "World-class theater", "price": 150.0},
-            {"name": "Rooftop Bar 230 Fifth", "description": "Empire State Building views", "price": 45.0},
-            {"name": "Comedy Cellar", "description": "Famous comedy club", "price": 35.0},
-            {"name": "Jazz at Lincoln Center", "description": "Premier jazz venue", "price": 75.0},
-            {"name": "Speakeasy PDT", "description": "Hidden cocktail bar", "price": 40.0},
-        ]
-    }
-}
+async def geocode_location(location: str) -> Optional[tuple[float, float]]:
+    """Get latitude and longitude for a city using Nominatim API"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": location, "format": "json", "limit": 1},
+                headers={"User-Agent": "TripItinerary/1.0"}
+            )
+            data = response.json()
+            if data:
+                return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception:
+        pass
+    return None
 
-def get_places_for_location(location: str) -> Dict[str, List[Dict]]:
-    """Get places for a specific location, with fallback to generic places"""
-    location_key = location.lower().replace(" ", "")
-    
-    if location_key in MOCK_PLACES:
-        return MOCK_PLACES[location_key]
-    
-    return {
-        "historical": [
-            {"name": f"{location} History Museum", "description": "Local history and culture", "price": 15.0},
-            {"name": f"{location} Art Gallery", "description": "Regional art collection", "price": 12.0},
-            {"name": "Historic Downtown", "description": "Walking tour of historic district", "price": 8.0},
-            {"name": "Cultural Center", "description": "Local cultural exhibitions", "price": 10.0},
-        ],
-        "food": [
-            {"name": "Local Cuisine Restaurant", "description": "Traditional regional dishes", "price": 35.0},
-            {"name": "Street Food Market", "description": "Local street food vendors", "price": 12.0},
-            {"name": "Fine Dining Experience", "description": "Upscale local restaurant", "price": 85.0},
-            {"name": "Café & Bakery", "description": "Local coffee and pastries", "price": 8.0},
-        ],
-        "scenic": [
-            {"name": f"{location} Viewpoint", "description": "Best city/landscape views", "price": 5.0},
-            {"name": "City Park", "description": "Main public park and gardens", "price": 0.0},
-            {"name": "Scenic Walking Trail", "description": "Nature walk with views", "price": 0.0},
-            {"name": "Observation Deck", "description": "Panoramic city views", "price": 18.0},
-        ],
-        "nightlife": [
-            {"name": "Local Pub", "description": "Traditional local bar", "price": 25.0},
-            {"name": "Night Market", "description": "Evening food and shopping", "price": 15.0},
-            {"name": "Live Music Venue", "description": "Local bands and performances", "price": 30.0},
-            {"name": "Cocktail Lounge", "description": "Upscale drinks and atmosphere", "price": 40.0},
-        ]
+async def fetch_places_from_osm(lat: float, lon: float, category: str) -> List[Dict]:
+    """Fetch places from OpenStreetMap Overpass API"""
+    queries = {
+        "historical": '[out:json][timeout:25];(node["tourism"="museum"](around:5000,{},{});node["tourism"="gallery"](around:5000,{},{}););out;',
+        "food": '[out:json][timeout:25];(node["amenity"="restaurant"](around:5000,{},{});node["amenity"="cafe"](around:5000,{},{}););out;',
+        "scenic": '[out:json][timeout:25];(node["leisure"="park"](around:5000,{},{});node["tourism"="attraction"](around:5000,{},{}););out;',
+        "nightlife": '[out:json][timeout:25];(node["amenity"="bar"](around:5000,{},{});node["amenity"="pub"](around:5000,{},{}););out;'
     }
+    
+    pricing = {
+        "historical": {"min": 8, "max": 25},
+        "food": {"min": 12, "max": 60},
+        "scenic": {"min": 0, "max": 15},
+        "nightlife": {"min": 20, "max": 50}
+    }
+    
+    query = queries.get(category, "")
+    if not query:
+        return []
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://overpass-api.de/api/interpreter",
+                data=query.format(lat, lon, lat, lon),
+                headers={"User-Agent": "TripItinerary/1.0"},
+                timeout=30
+            )
+            data = response.json()
+            
+            places = []
+            for element in data.get("elements", [])[:8]:
+                name = element.get("tags", {}).get("name", "Unknown Place")
+                if name == "Unknown Place":
+                    continue
+                    
+                price_range = pricing[category]
+                price = random.uniform(price_range["min"], price_range["max"])
+                if category == "scenic" and random.random() < 0.4:
+                    price = 0.0
+                
+                tags = element.get("tags", {})
+                description = tags.get("description", "")
+                if not description:
+                    if "cuisine" in tags:
+                        description = f"{tags['cuisine'].title()} cuisine"
+                    elif "tourism" in tags:
+                        description = f"{tags['tourism'].title()} attraction"
+                    elif "amenity" in tags:
+                        description = f"{tags['amenity'].title()} venue"
+                    else:
+                        description = "Popular local destination"
+                
+                places.append({
+                    "name": name,
+                    "description": description,
+                    "price": round(price, 2)
+                })
+            
+            return places
+    except Exception:
+        return []
+
+async def get_places_for_location(location: str) -> Dict[str, List[Dict]]:
+    """Get real places for a specific location using OpenStreetMap APIs"""
+    coords = await geocode_location(location)
+    if not coords:
+        return {
+            "historical": [{"name": f"{location} History Museum", "description": "Local history and culture", "price": 15.0}],
+            "food": [{"name": "Local Restaurant", "description": "Traditional regional dishes", "price": 35.0}],
+            "scenic": [{"name": f"{location} City Park", "description": "Main public park", "price": 0.0}],
+            "nightlife": [{"name": "Local Bar", "description": "Traditional local bar", "price": 25.0}]
+        }
+    
+    lat, lon = coords
+    
+    categories = ["historical", "food", "scenic", "nightlife"]
+    places_data = {}
+    
+    for category in categories:
+        places = await fetch_places_from_osm(lat, lon, category)
+        if not places:
+            places = [{"name": f"Local {category.title()} Spot", "description": f"Popular {category} destination", "price": 20.0}]
+        places_data[category] = places
+    
+    return places_data
 
 @app.get("/healthz")
 async def healthz():
@@ -171,7 +149,7 @@ async def generate_itinerary(request: TripRequest):
     if request.budget <= 0:
         raise HTTPException(status_code=400, detail="Budget must be greater than 0")
     
-    location_places = get_places_for_location(request.location)
+    location_places = await get_places_for_location(request.location)
     
     places_per_day = 4  # Roughly 1 from each category per day
     max_places_per_category = max(1, request.days)
